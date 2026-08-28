@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "market-test-bench"
+version = "0.1.0"
+description = "Randomized, regime-aware benchmark for evaluating trading strategy outputs across changing market conditions."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+  { name = "Ahmet Yasin" }
+]
+keywords = [
+  "algorithmic-trading",
+  "backtesting",
+  "benchmark",
+  "market-regimes",
+  "quantitative-finance",
+  "stress-testing"
+]
+dependencies = [
+  "typer>=0.12",
+  "rich>=13.7",
+  "pyyaml>=6.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "ruff>=0.5"
+]
+
+[project.scripts]
+market-test-bench = "market_test_bench.cli:app"
+mtb = "market_test_bench.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/market_test_bench"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

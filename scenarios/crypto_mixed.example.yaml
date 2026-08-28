@@ -1,0 +1,33 @@
+name: crypto_mixed_example
+description: Example randomized crypto benchmark scenario.
+
+universe:
+  asset_class: crypto
+  venue: binance
+  symbols:
+    - BTC-USDT
+    - ETH-USDT
+  timeframe: 1h
+  start: "2020-01-01T00:00:00Z"
+  end: "2026-01-01T00:00:00Z"
+
+sampling:
+  seed: 42
+  window_count: 50
+  context_bars: 240
+  trade_bars: 720
+  method: stratified_by_regime
+
+regimes:
+  target_distribution:
+    bull: 0.2
+    bear: 0.2
+    sideways: 0.2
+    high_volatility: 0.2
+    low_volatility: 0.2
+
+execution:
+  initial_cash: 10000
+  fee_bps: 10
+  slippage_bps: 5
+  allow_short: false
