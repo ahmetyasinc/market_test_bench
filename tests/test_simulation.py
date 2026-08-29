@@ -25,7 +25,7 @@ def test_create_simulation_stores_valid_upload(tmp_path: Path) -> None:
         files=[
             UploadedDecisionFile(
                 file_name="decisions.csv",
-                content=b"timestamp,symbol,target_quantity\n2024-01-01T00:00:00Z,BTCUSDT,0.125\n",
+                content=b"timestamp,symbol,target_quantity,price\n2024-01-01T00:00:00Z,BTCUSDT,0.125,100.0\n",
             )
         ],
     )
@@ -56,7 +56,7 @@ def test_create_simulation_records_validation_errors(tmp_path: Path) -> None:
         files=[
             UploadedDecisionFile(
                 file_name="../bad decisions.txt",
-                content=b"timestamp,symbol,target_quantity\n2024-01-01T00:00:00Z,ETHUSDT,-0.5\n",
+                content=b"timestamp,symbol,target_quantity,price\n2024-01-01T00:00:00Z,ETHUSDT,-0.5,100.0\n",
             )
         ],
     )
@@ -86,7 +86,7 @@ def test_create_simulation_accepts_header_only_upload(tmp_path: Path) -> None:
         files=[
             UploadedDecisionFile(
                 file_name="decisions.csv",
-                content=b"window_id,timestamp,symbol,target_quantity\n",
+                content=b"window_id,timestamp,symbol,target_quantity,price\n",
             )
         ],
     )
@@ -114,7 +114,7 @@ def test_delete_simulation_records_removes_files_and_validation_rows(tmp_path: P
         files=[
             UploadedDecisionFile(
                 file_name="decisions.csv",
-                content=b"timestamp,symbol,target_quantity\n2024-01-01T00:00:00Z,ETHUSDT,-0.5\n",
+                content=b"timestamp,symbol,target_quantity,price\n2024-01-01T00:00:00Z,ETHUSDT,-0.5,100.0\n",
             )
         ],
     )
@@ -144,7 +144,7 @@ def test_delete_simulation_endpoint_removes_records_and_directory(tmp_path: Path
         files=[
             UploadedDecisionFile(
                 file_name="decisions.csv",
-                content=b"timestamp,symbol,target_quantity\n2024-01-01T00:00:00Z,BTCUSDT,0.125\n",
+                content=b"timestamp,symbol,target_quantity,price\n2024-01-01T00:00:00Z,BTCUSDT,0.125,100.0\n",
             )
         ],
     )

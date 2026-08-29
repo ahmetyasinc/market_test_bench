@@ -18,7 +18,7 @@ STANDARD_INITIAL_CASH_USDT = 10_000.0
 class SimulationSettings:
     initial_cash: float = STANDARD_INITIAL_CASH_USDT
     fee_bps: float = 10.0
-    slippage_bps: float = 5.0
+    slippage_bps: float = 0.0
     allow_short: bool = False
     missing_decision_policy: str = "hold_last"
     timestamp_alignment_policy: str = "exact_or_previous"

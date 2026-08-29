@@ -18,6 +18,7 @@
       <nav>
         <button class="active" data-nav="data">Data Library</button>
         <button data-nav="simulations">Simulations</button>
+        <button data-nav="reports">Reports</button>
       </nav>
     </aside>
 
@@ -140,6 +141,7 @@
               Session
               <select id="simulation-session"></select>
             </label>
+            <div class="selected-session-summary" id="simulation-session-summary"></div>
             <label>
               Simulation name
               <input id="simulation-name" value="Strategy upload" />
@@ -156,10 +158,6 @@
               <label>
                 Fee bps
                 <input id="fee-bps" type="number" min="0" step="0.1" value="10" />
-              </label>
-              <label>
-                Slippage bps
-                <input id="slippage-bps" type="number" min="0" step="0.1" value="5" />
               </label>
             </div>
             <label class="check-row">
@@ -181,6 +179,25 @@
           <input id="simulation-filter" placeholder="Filter simulation..." />
         </div>
         <div class="simulation-list" id="simulation-list"></div>
+      </section>
+
+      <section class="simulation-ledger" data-view="reports" hidden>
+        <div class="section-head">
+          <h2>Reports</h2>
+          <input id="report-filter" placeholder="Filter report..." />
+        </div>
+        <div class="simulation-list" id="report-list"></div>
+      </section>
+
+      <section class="report-detail-page" data-view="report-detail" hidden>
+        <div class="section-head">
+          <h2 id="report-detail-name">Report Detail</h2>
+          <div class="session-actions">
+            <button id="back-to-reports" type="button">Back to reports</button>
+            <button class="danger-button" id="delete-open-report" type="button">Delete report</button>
+          </div>
+        </div>
+        <div id="report-detail"></div>
       </section>
     </main>
     <div class="modal-backdrop" id="session-modal" hidden>
@@ -219,6 +236,19 @@
         <div id="simulation-detail"></div>
       </div>
     </div>
+    <div class="modal-backdrop" id="regime-modal" hidden>
+      <div class="modal">
+        <div class="modal-head">
+          <div>
+            <h2>Regime Details</h2>
+            <p id="regime-detail-title"></p>
+          </div>
+          <button id="close-regime" type="button">Close</button>
+        </div>
+        <div id="regime-detail"></div>
+      </div>
+    </div>
+    <script src="/static/echarts.min.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>

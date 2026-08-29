@@ -259,9 +259,23 @@ class Catalog:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT sw.*, nf.source, nf.market, nf.data_type, nf.year_month, nf.path, nf.sha256
+                SELECT
+                    sw.*,
+                    nf.source,
+                    nf.market,
+                    nf.data_type,
+                    nf.year_month,
+                    nf.path,
+                    nf.sha256,
+                    sf.session_path,
+                    c.labels,
+                    c.features_json
                 FROM session_windows sw
                 JOIN normalized_files nf ON nf.id = sw.normalized_file_id
+                JOIN session_files sf
+                    ON sf.session_id = sw.session_id
+                    AND sf.normalized_file_id = sw.normalized_file_id
+                LEFT JOIN classifications c ON c.normalized_file_id = nf.id
                 WHERE sw.session_id = ?
                 ORDER BY sw.sort_order
                 """,
@@ -385,6 +399,14 @@ class Catalog:
                     str(path),
                     settings_json,
                 ),
+            )
+
+    def update_simulation_status(self, *, simulation_id: str, status: str) -> None:
+        completed_sql = ", completed_at = CURRENT_TIMESTAMP" if status in {"completed", "failed"} else ""
+        with self.connect() as connection:
+            connection.execute(
+                f"UPDATE simulations SET status = ?{completed_sql} WHERE id = ?",
+                (status, simulation_id),
             )
 
     def add_simulation_file(

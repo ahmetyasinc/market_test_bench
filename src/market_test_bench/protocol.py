@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-REQUIRED_DECISION_COLUMNS = ("timestamp", "symbol", "target_quantity")
+REQUIRED_DECISION_COLUMNS = ("timestamp", "symbol", "target_quantity", "price")
 
 
 @dataclass(frozen=True)
@@ -95,6 +95,29 @@ def validate_decision_file(
                 )
             )
             continue
+
+        try:
+            execution_price = float(row["price"])
+        except ValueError:
+            issues.append(
+                _issue(
+                    path,
+                    row_number,
+                    "non_numeric_price",
+                    f"{path} row {row_number} contains a non-numeric execution price.",
+                )
+            )
+            continue
+
+        if execution_price <= 0:
+            issues.append(
+                _issue(
+                    path,
+                    row_number,
+                    "non_positive_price",
+                    f"{path} row {row_number} contains a non-positive execution price.",
+                )
+            )
 
         if target_quantity < 0 and not allow_short:
             issues.append(

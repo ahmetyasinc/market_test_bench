@@ -35,10 +35,10 @@ symbol's target net base-asset quantity to this value for this window." Do not w
 market bar unless the target quantity actually changes on every bar.
 
 ```csv
-window_id,timestamp,symbol,target_quantity
-window_0001,2024-01-01T00:00:00Z,BTCUSDT,0.0
-window_0001,2024-01-01T01:00:00Z,BTCUSDT,0.125
-window_0002,2024-03-12T08:00:00Z,ETHUSDT,1.4
+window_id,timestamp,symbol,target_quantity,price
+window_0001,2024-01-01T00:00:00Z,BTCUSDT,0.0,42200.0
+window_0001,2024-01-01T01:00:00Z,BTCUSDT,0.125,42450.5
+window_0002,2024-03-12T08:00:00Z,ETHUSDT,1.4,3120.25
 ```
 
 Required columns:
@@ -48,6 +48,8 @@ Required columns:
 - `symbol`: symbol from the selected session.
 - `target_quantity`: desired net base-asset quantity. Positive values are long, negative values
   are short, and `0.0` is flat.
+- `price`: actual strategy fill price for the target quantity change. The strategy must include
+  its own spread, slippage, order type, and execution assumptions in this value.
 
 Additional columns are allowed and preserved in the uploaded CSV files, but v0.1 validation ignores
 them.
@@ -61,8 +63,8 @@ Rows are decision events, not a full market-data export:
 - A strategy with no signals may output a CSV with only the header row.
 
 Decision timestamps do not have to equal candle open or close timestamps. Strategies that use
-`aggTrades` may emit intrabar timestamps. The evaluator must align those events onto the execution
-timeline according to `timestamp_alignment_policy`.
+`aggTrades` may emit intrabar timestamps. The evaluator uses the row timestamp as the fill
+timestamp and the row price as the fill price.
 
 ## Strategy Agent Input
 
@@ -91,7 +93,7 @@ The preferred output is one CSV file containing all decisions for all windows.
 Required header:
 
 ```csv
-window_id,timestamp,symbol,target_quantity
+window_id,timestamp,symbol,target_quantity,price
 ```
 
 Rules:
@@ -102,6 +104,7 @@ Rules:
 - Write only target-quantity change events; do not copy every input candle into the output.
 - Calculate sizing inside the strategy using the fixed 10000 USDT initial cash standard.
 - Emit `target_quantity` as the desired net base-asset quantity after the event.
+- Emit `price` as the actual fill price used by the strategy for that target change.
 - To close a position, emit the remaining desired quantity, commonly `0.0`.
 - For partial closes or stop exits, the strategy must track its own open quantities and emit the
   resulting net target quantity.
@@ -141,7 +144,7 @@ should include `window_id`.
 A simulation is valid only when all uploaded decision files pass validation:
 
 - At least one CSV decision file must be uploaded.
-- Every file must contain `timestamp`, `symbol`, and `target_quantity`.
+- Every file must contain `timestamp`, `symbol`, `target_quantity`, and `price`.
 - Header-only CSV files are valid and mean no target changes.
 - Final benchmark-run validation will also require `window_id`.
 - `timestamp` must be parseable as ISO-8601.
@@ -150,6 +153,7 @@ A simulation is valid only when all uploaded decision files pass validation:
 - `timestamp` must fall inside that window's tradable range.
 - `timestamp` may be an intrabar event time when the strategy uses trade-level data.
 - `target_quantity` must be numeric.
+- `price` must be numeric and greater than zero.
 - If `allow_short` is false, negative `target_quantity` values are invalid.
 - Duplicate `timestamp + symbol` rows inside the same file are invalid.
 
@@ -162,10 +166,12 @@ Every simulation stores the settings that will later drive evaluation:
 
 - `initial_cash`: fixed standard value, always `10000.0` USDT.
 - `fee_bps`: fee in basis points.
-- `slippage_bps`: slippage in basis points.
+- `slippage_bps`: legacy setting. Strategy-priced fills already include slippage and spread, so
+  v0.1 evaluation does not apply additional slippage.
 - `allow_short`: whether negative target quantities are allowed.
 - `missing_decision_policy`: v0.1 default is `hold_last`.
-- `timestamp_alignment_policy`: v0.1 default is `exact_or_previous`.
+- `timestamp_alignment_policy`: legacy setting. Strategy-priced fills use the decision row
+  timestamp directly.
 
 Policy meanings:
 

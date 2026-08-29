@@ -17,6 +17,7 @@ from market_test_bench.binance import (
     top_symbols_by_quote_volume,
 )
 from market_test_bench.catalog import Catalog
+from market_test_bench.engine import load_report, run_simulation_engine
 from market_test_bench.simulation import (
     SimulationSettings,
     UploadedDecisionFile,
@@ -48,6 +49,7 @@ class DownloadPayload(BaseModel):
 
 
 jobs: dict[str, dict] = {}
+simulation_run_jobs: dict[str, dict] = {}
 
 
 @app.get("/")
@@ -113,6 +115,35 @@ def simulations() -> dict:
     return {"items": [_with_simulation_runtime_fields(item) for item in catalog.list_simulations()]}
 
 
+@app.get("/api/reports")
+def reports() -> dict:
+    items = []
+    for simulation in catalog.list_simulations():
+        enriched = _with_simulation_runtime_fields(simulation)
+        report_path = Path(enriched["results_path"]) / "report.json"
+        if not report_path.exists():
+            continue
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        items.append(
+            {
+                "simulation_id": enriched["id"],
+                "name": enriched["name"],
+                "strategy_name": enriched["strategy_name"],
+                "strategy_version": enriched["strategy_version"],
+                "session_id": enriched["session_id"],
+                "status": enriched["status"],
+                "created_at": enriched["created_at"],
+                "completed_at": enriched["completed_at"],
+                "summary": report.get("summary", {}),
+                "settings": report.get("settings", {}),
+            }
+        )
+    return {"items": items}
+
+
 @app.get("/api/simulations/{simulation_id}")
 def simulation_detail(simulation_id: str) -> dict:
     simulation = catalog.get_simulation(simulation_id)
@@ -123,6 +154,57 @@ def simulation_detail(simulation_id: str) -> dict:
         "files": catalog.list_simulation_files(simulation_id),
         "validation_results": catalog.list_simulation_validation_results(simulation_id),
     }
+
+
+@app.post("/api/simulations/{simulation_id}/run")
+def run_simulation(simulation_id: str, background_tasks: BackgroundTasks) -> dict:
+    simulation = catalog.get_simulation(simulation_id)
+    if simulation is None:
+        raise HTTPException(status_code=404, detail="Simulation not found.")
+    if simulation["status"] == "invalid" or int(simulation.get("error_count") or 0) > 0:
+        raise HTTPException(status_code=400, detail="Only valid simulation uploads can be executed.")
+    job_id = f"simrun_{len(simulation_run_jobs) + 1:04d}"
+    simulation_run_jobs[job_id] = {
+        "job_id": job_id,
+        "simulation_id": simulation_id,
+        "status": "queued",
+        "messages": [],
+    }
+    background_tasks.add_task(_run_simulation_job, job_id, simulation_id)
+    return {"job_id": job_id, "simulation_id": simulation_id, "status": "queued"}
+
+
+@app.get("/api/simulation-runs/{job_id}")
+def simulation_run_status(job_id: str) -> dict:
+    if job_id not in simulation_run_jobs:
+        raise HTTPException(status_code=404, detail="Simulation run job not found.")
+    return simulation_run_jobs[job_id]
+
+
+@app.get("/api/reports/{simulation_id}")
+def report_detail(simulation_id: str) -> dict:
+    try:
+        return load_report(catalog=catalog, simulation_id=simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.delete("/api/reports/{simulation_id}")
+def delete_report(simulation_id: str) -> dict:
+    simulation = catalog.get_simulation(simulation_id)
+    if simulation is None:
+        raise HTTPException(status_code=404, detail="Simulation not found.")
+
+    results_path = (Path(simulation["path"]) / "results").resolve()
+    simulations_root = workspace.simulations_path.resolve()
+    if not results_path.is_relative_to(simulations_root):
+        raise HTTPException(status_code=400, detail="Report path is outside the workspace.")
+
+    if results_path.exists():
+        shutil.rmtree(results_path)
+    results_path.mkdir(parents=True, exist_ok=True)
+    catalog.update_simulation_status(simulation_id=simulation_id, status="valid")
+    return {"status": "deleted", "simulation_id": simulation_id}
 
 
 @app.delete("/api/simulations/{simulation_id}")
@@ -286,6 +368,30 @@ def _run_download_job(job_id: str, payload: DownloadPayload) -> None:
         "failed_files": summary.failed_files,
         "messages": summary.messages,
     })
+
+
+def _run_simulation_job(job_id: str, simulation_id: str) -> None:
+    simulation_run_jobs[job_id].update({"status": "running", "messages": ["Simulation engine started."]})
+    try:
+        result = run_simulation_engine(
+            workspace=workspace,
+            catalog=catalog,
+            simulation_id=simulation_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - user-facing job state must survive failures.
+        catalog.update_simulation_status(simulation_id=simulation_id, status="failed")
+        simulation_run_jobs[job_id].update({"status": "failed", "messages": [str(exc)]})
+        return
+    simulation_run_jobs[job_id].update(
+        {
+            "status": "completed",
+            "messages": ["Simulation engine completed."],
+            "report_path": str(result.report_path),
+            "total_return_pct": result.total_return_pct,
+            "trade_count": result.trade_count,
+            "window_count": result.window_count,
+        }
+    )
 
 
 def _record_job_event(job_id: str, event: dict) -> None:
