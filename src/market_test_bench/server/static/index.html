@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MarketTestBench</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">MTB</span>
+        <div>
+          <strong>MarketTestBench</strong>
+          <small>Local benchmark lab</small>
+        </div>
+      </div>
+      <nav>
+        <button class="active">Data Library</button>
+      </nav>
+    </aside>
+
+    <main>
+      <section class="topbar">
+        <div>
+          <h1>Data Management</h1>
+          <p id="workspace">Workspace loading...</p>
+        </div>
+        <button id="refresh">Refresh</button>
+      </section>
+
+      <section class="metrics">
+        <div><span id="dataset-count">0</span><small>Session parquet files</small></div>
+        <div><span id="symbol-count">0</span><small>Symbols</small></div>
+        <div><span id="label-count">0</span><small>Labels observed</small></div>
+        <div><span id="session-count">0</span><small>Sessions</small></div>
+      </section>
+
+      <section class="surface split">
+        <div>
+          <h2>Download Center</h2>
+          <form id="download-form">
+            <label>
+              Symbol mode
+              <select id="symbol-mode">
+                <option value="manual">Manual symbols</option>
+                <option value="top_10">Top volume 10</option>
+                <option value="top_30">Top volume 30</option>
+                <option value="top_100">Top volume 100</option>
+              </select>
+            </label>
+            <label>
+              Symbols
+              <input id="symbols" value="BTCUSDT,ETHUSDT" />
+            </label>
+            <div class="grid-2">
+              <label>
+                Interval
+                <select id="interval">
+                  <option>1m</option>
+                  <option>3m</option>
+                  <option>5m</option>
+                  <option>15m</option>
+                  <option>30m</option>
+                  <option>1h</option>
+                  <option>2h</option>
+                  <option>4h</option>
+                </select>
+              </label>
+              <label>
+                Random seed
+                <input id="seed" type="number" value="42" />
+              </label>
+            </div>
+            <label>
+              Workers
+              <div class="range-row">
+                <input id="workers" type="range" min="1" max="16" value="4" />
+                <span id="workers-value">4</span>
+              </div>
+            </label>
+            <label class="check-row">
+              <input id="include-agg-trades" type="checkbox" />
+              <span>Download aggTrades for every accepted month</span>
+            </label>
+            <div class="grid-3">
+              <label>
+                Start month
+                <input id="start-month" value="2020-01" />
+              </label>
+              <label>
+                End month
+                <input id="end-month" value="2026-01" />
+              </label>
+              <label>
+                Months
+                <input id="month-count" type="number" min="100" value="100" />
+              </label>
+            </div>
+            <button type="submit">Start download</button>
+          </form>
+          <div class="job-panel">
+            <div class="progress-track">
+              <div id="progress-fill"></div>
+            </div>
+            <div class="job-summary" id="job-summary">No active job.</div>
+            <div class="event-list" id="event-list"></div>
+          </div>
+        </div>
+
+        <div>
+          <h2>Classification Targets</h2>
+          <div class="label-grid" id="label-grid"></div>
+          <p class="note">
+            Windows may carry multiple labels. When a target class is missing, new candidates are
+            accepted only if they include at least one missing label.
+          </p>
+        </div>
+      </section>
+
+      <section class="surface">
+        <div class="section-head">
+          <h2>Sessions</h2>
+          <input id="session-filter" placeholder="Filter session..." />
+        </div>
+        <div class="session-list" id="session-list"></div>
+      </section>
+    </main>
+    <div class="modal-backdrop" id="session-modal" hidden>
+      <div class="modal">
+        <div class="modal-head">
+          <div>
+            <h2>Session Details</h2>
+            <p id="session-detail-title"></p>
+          </div>
+          <button id="close-session" type="button">Close</button>
+        </div>
+        <div id="session-detail"></div>
+      </div>
+    </div>
+    <div class="modal-backdrop" id="classification-modal" hidden>
+      <div class="modal">
+        <div class="modal-head">
+          <div>
+            <h2>Session Classification</h2>
+            <p id="classification-session"></p>
+          </div>
+          <button id="close-classification" type="button">Close</button>
+        </div>
+        <div class="bar-chart-grid" id="classification-bars"></div>
+      </div>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

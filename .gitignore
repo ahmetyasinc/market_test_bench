@@ -21,6 +21,9 @@ runs/
 data/
 datasets/
 benchmarks/results/
+.tmp-test-workspace/
+.tmp-debug-workspace*/
+.tmp-session-test/
 
 # Editors and OS
 .idea/
