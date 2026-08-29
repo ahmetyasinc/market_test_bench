@@ -20,10 +20,9 @@ env/
 runs/
 data/
 datasets/
+simulations/
 benchmarks/results/
-.tmp-test-workspace/
-.tmp-debug-workspace*/
-.tmp-session-test/
+.tmp*/
 
 # Editors and OS
 .idea/

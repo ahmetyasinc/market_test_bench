@@ -108,6 +108,7 @@ class DownloadSummary:
     agg_trades_normalized: int = 0
     agg_trades_skipped_existing: int = 0
     failed_files: int = 0
+    windows: list[dict] = field(default_factory=list)
     classifications: list[ClassificationResult] = field(default_factory=list)
     messages: list[str] = field(default_factory=list)
 
@@ -445,11 +446,37 @@ class BinanceDataManager:
 
         kline_session_path = session_data_path / "klines" / f"{symbol}_{request.interval}_{year_month}.parquet"
         kline_normalized_id = self._commit_prepared_file(result.kline, kline_session_path)
+        sort_order = summary.normalized_files + summary.skipped_existing
         self.catalog.add_session_file(
             session_id=session_id,
             normalized_file_id=kline_normalized_id,
             session_path=kline_session_path,
-            sort_order=summary.normalized_files + summary.skipped_existing,
+            sort_order=sort_order,
+        )
+        window_id = data_window_id(result.kline)
+        self.catalog.add_session_window(
+            session_id=session_id,
+            window_id=window_id,
+            normalized_file_id=kline_normalized_id,
+            symbol=result.kline.symbol,
+            interval=result.kline.interval,
+            start_time=result.kline.start_time or "",
+            end_time=result.kline.end_time or "",
+            row_count=result.kline.row_count or 0,
+            sort_order=sort_order,
+        )
+        summary.windows.append(
+            {
+                "window_id": window_id,
+                "normalized_file_id": kline_normalized_id,
+                "symbol": result.kline.symbol,
+                "interval": result.kline.interval,
+                "year_month": result.kline.year_month,
+                "start_time": result.kline.start_time,
+                "end_time": result.kline.end_time,
+                "row_count": result.kline.row_count,
+                "session_path": str(kline_session_path),
+            }
         )
         if result.kline.status == "skipped":
             summary.skipped_existing += 1
@@ -1091,6 +1118,25 @@ def create_session_id() -> str:
     return f"session_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
 
 
+def data_window_id(file: DownloadedFile) -> str:
+    fingerprint = "|".join(
+        (
+            file.source,
+            file.market,
+            file.data_type,
+            file.symbol,
+            file.interval,
+            file.year_month,
+            file.start_time or "",
+            file.end_time or "",
+            file.sha256 or "",
+        )
+    )
+    digest = hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:10]
+    compact_month = file.year_month.replace("-", "")
+    return f"win_{file.source}_{file.market}_{file.symbol}_{file.interval}_{compact_month}_{digest}"
+
+
 def link_or_copy_file(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.unlink(missing_ok=True)
@@ -1121,6 +1167,8 @@ def write_session_manifest(
         "candidate_file_count": summary.candidate_months,
         "attempted_file_count": summary.attempted_files,
         "valid_file_count": summary.normalized_files + summary.skipped_existing,
+        "window_count": len(summary.windows),
+        "windows": summary.windows,
         "normalized_files": summary.normalized_files,
         "reused_files": summary.skipped_existing,
         "failed_files": summary.failed_files,

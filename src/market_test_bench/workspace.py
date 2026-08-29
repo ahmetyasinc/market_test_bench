@@ -37,6 +37,10 @@ class Workspace:
     def sessions_path(self) -> Path:
         return self.root / "sessions"
 
+    @property
+    def simulations_path(self) -> Path:
+        return self.root / "simulations"
+
 
 def default_workspace_root() -> Path:
     configured = os.environ.get(WORKSPACE_ENV_VAR)
@@ -53,6 +57,7 @@ def open_workspace(root: Path | None = None) -> Workspace:
         workspace.normalized_path,
         workspace.runs_path,
         workspace.sessions_path,
+        workspace.simulations_path,
     ):
         path.mkdir(parents=True, exist_ok=True)
 

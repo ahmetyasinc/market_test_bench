@@ -16,27 +16,28 @@
         </div>
       </div>
       <nav>
-        <button class="active">Data Library</button>
+        <button class="active" data-nav="data">Data Library</button>
+        <button data-nav="simulations">Simulations</button>
       </nav>
     </aside>
 
     <main>
       <section class="topbar">
         <div>
-          <h1>Data Management</h1>
+          <h1 id="page-title">Data Management</h1>
           <p id="workspace">Workspace loading...</p>
         </div>
         <button id="refresh">Refresh</button>
       </section>
 
-      <section class="metrics">
+      <section class="metrics" data-view="data">
         <div><span id="dataset-count">0</span><small>Session parquet files</small></div>
         <div><span id="symbol-count">0</span><small>Symbols</small></div>
         <div><span id="label-count">0</span><small>Labels observed</small></div>
         <div><span id="session-count">0</span><small>Sessions</small></div>
       </section>
 
-      <section class="surface split">
+      <section class="surface split" data-view="data">
         <div>
           <h2>Download Center</h2>
           <form id="download-form">
@@ -118,12 +119,68 @@
         </div>
       </section>
 
-      <section class="surface">
+      <section class="surface" data-view="data">
         <div class="section-head">
           <h2>Sessions</h2>
           <input id="session-filter" placeholder="Filter session..." />
         </div>
         <div class="session-list" id="session-list"></div>
+      </section>
+
+      <section class="simulation-workbench" data-view="simulations" hidden>
+        <form id="simulation-form" class="simulation-form">
+          <div class="simulation-dropzone">
+            <input id="decision-files" type="file" accept=".csv,text/csv" multiple />
+            <strong>Decision CSV Upload</strong>
+            <span id="selected-file-count">No files selected</span>
+          </div>
+
+          <div class="simulation-fields">
+            <label>
+              Session
+              <select id="simulation-session"></select>
+            </label>
+            <label>
+              Simulation name
+              <input id="simulation-name" value="Strategy upload" />
+            </label>
+            <label>
+              Strategy name
+              <input id="strategy-name" value="External strategy" />
+            </label>
+            <label>
+              Strategy version
+              <input id="strategy-version" placeholder="optional" />
+            </label>
+            <div class="simulation-settings">
+              <label>
+                Fee bps
+                <input id="fee-bps" type="number" min="0" step="0.1" value="10" />
+              </label>
+              <label>
+                Slippage bps
+                <input id="slippage-bps" type="number" min="0" step="0.1" value="5" />
+              </label>
+            </div>
+            <label class="check-row">
+              <input id="allow-short" type="checkbox" />
+              <span>Allow short target quantities</span>
+            </label>
+            <button type="submit">Upload decisions</button>
+          </div>
+        </form>
+        <div class="simulation-result">
+          <strong id="simulation-upload-summary">No simulation uploaded.</strong>
+          <div class="event-list" id="simulation-validation-list"></div>
+        </div>
+      </section>
+
+      <section class="simulation-ledger" data-view="simulations" hidden>
+        <div class="section-head">
+          <h2>Simulation Uploads</h2>
+          <input id="simulation-filter" placeholder="Filter simulation..." />
+        </div>
+        <div class="simulation-list" id="simulation-list"></div>
       </section>
     </main>
     <div class="modal-backdrop" id="session-modal" hidden>
@@ -148,6 +205,18 @@
           <button id="close-classification" type="button">Close</button>
         </div>
         <div class="bar-chart-grid" id="classification-bars"></div>
+      </div>
+    </div>
+    <div class="modal-backdrop" id="simulation-modal" hidden>
+      <div class="modal">
+        <div class="modal-head">
+          <div>
+            <h2>Simulation Details</h2>
+            <p id="simulation-detail-title"></p>
+          </div>
+          <button id="close-simulation" type="button">Close</button>
+        </div>
+        <div id="simulation-detail"></div>
       </div>
     </div>
     <script src="/static/app.js"></script>

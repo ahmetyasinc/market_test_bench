@@ -1,7 +1,11 @@
+from pathlib import Path
+
 import pytest
 
 from market_test_bench.binance import (
+    DownloadedFile,
     MissingBinanceDataError,
+    data_window_id,
     filter_top_volume_symbols,
     iter_months,
     monthly_agg_trades_url,
@@ -85,3 +89,42 @@ def test_monthly_agg_trades_url_uses_expected_binance_path() -> None:
 
 def test_missing_data_error_is_a_value_error() -> None:
     assert issubclass(MissingBinanceDataError, ValueError)
+
+
+def test_data_window_id_is_stable_and_data_specific() -> None:
+    first = DownloadedFile(
+        status="normalized",
+        normalized_file_id=1,
+        path=Path("BTCUSDT.parquet"),
+        source="binance",
+        market="spot",
+        data_type="klines",
+        symbol="BTCUSDT",
+        interval="1h",
+        year_month="2024-01",
+        row_count=744,
+        start_time="2024-01-01T00:00:00",
+        end_time="2024-01-31T23:00:00",
+        file_size_bytes=123,
+        sha256="abc",
+    )
+    second = DownloadedFile(
+        status="normalized",
+        normalized_file_id=1,
+        path=Path("BTCUSDT.parquet"),
+        source="binance",
+        market="spot",
+        data_type="klines",
+        symbol="BTCUSDT",
+        interval="1h",
+        year_month="2024-01",
+        row_count=744,
+        start_time="2024-01-01T00:00:00",
+        end_time="2024-01-31T23:00:00",
+        file_size_bytes=123,
+        sha256="def",
+    )
+
+    assert data_window_id(first) == data_window_id(first)
+    assert data_window_id(first) != data_window_id(second)
+    assert data_window_id(first).startswith("win_binance_spot_BTCUSDT_1h_202401_")

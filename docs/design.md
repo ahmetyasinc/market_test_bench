@@ -46,6 +46,6 @@ The context range can be used by external strategies for indicators, features, o
 
 ## Decision
 
-A decision file contains target weights over time for a specific window.
+A decision file contains target quantities over time for a specific window.
 
 MarketTestBench handles order generation, fills, costs, portfolio accounting, and metrics.

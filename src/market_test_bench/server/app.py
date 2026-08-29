@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import uuid4
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -17,9 +17,16 @@ from market_test_bench.binance import (
     top_symbols_by_quote_volume,
 )
 from market_test_bench.catalog import Catalog
+from market_test_bench.simulation import (
+    SimulationSettings,
+    UploadedDecisionFile,
+    create_simulation,
+)
 from market_test_bench.workspace import open_workspace
 
 STATIC_DIR = Path(__file__).parent / "static"
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+SIMULATION_STANDARD_PATH = PROJECT_ROOT / "docs" / "simulation-standard.md"
 
 workspace = open_workspace()
 catalog = Catalog(workspace)
@@ -55,6 +62,7 @@ def health() -> dict:
         "workspace": str(workspace.root),
         "primary_data_format": "parquet",
         "raw_files_policy": "delete_after_normalization",
+        "simulation_standard_path": str(SIMULATION_STANDARD_PATH),
         "server_instance_id": SERVER_INSTANCE_ID,
     }
 
@@ -74,15 +82,22 @@ def session_files(session_id: str) -> dict:
     return {"items": catalog.list_session_files(session_id)}
 
 
+@app.get("/api/sessions/{session_id}/windows")
+def session_windows(session_id: str) -> dict:
+    return {"items": catalog.list_session_windows(session_id)}
+
+
 @app.get("/api/sessions/{session_id}")
 def session_detail(session_id: str) -> dict:
     session = catalog.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
     files = catalog.list_session_files(session_id)
+    windows = catalog.list_session_windows(session_id)
     return {
         "session": _with_session_runtime_fields(session),
         "files": files,
+        "windows": windows,
         "layers": build_session_layers(files),
     }
 
@@ -91,6 +106,91 @@ def session_detail(session_id: str) -> dict:
 def session_classification(session_id: str) -> dict:
     files = catalog.list_session_files(session_id)
     return {"session_id": session_id, "groups": build_classification_groups(files)}
+
+
+@app.get("/api/simulations")
+def simulations() -> dict:
+    return {"items": [_with_simulation_runtime_fields(item) for item in catalog.list_simulations()]}
+
+
+@app.get("/api/simulations/{simulation_id}")
+def simulation_detail(simulation_id: str) -> dict:
+    simulation = catalog.get_simulation(simulation_id)
+    if simulation is None:
+        raise HTTPException(status_code=404, detail="Simulation not found.")
+    return {
+        "simulation": _with_simulation_runtime_fields(simulation),
+        "files": catalog.list_simulation_files(simulation_id),
+        "validation_results": catalog.list_simulation_validation_results(simulation_id),
+    }
+
+
+@app.delete("/api/simulations/{simulation_id}")
+def delete_simulation(simulation_id: str) -> dict:
+    simulation = catalog.get_simulation(simulation_id)
+    if simulation is None:
+        raise HTTPException(status_code=404, detail="Simulation not found.")
+
+    simulation_path = Path(simulation["path"]).resolve()
+    simulations_root = workspace.simulations_path.resolve()
+    if not simulation_path.is_relative_to(simulations_root):
+        raise HTTPException(status_code=400, detail="Simulation path is outside the workspace simulations directory.")
+
+    deleted = catalog.delete_simulation_records(simulation_id)
+    if deleted is None:
+        raise HTTPException(status_code=404, detail="Simulation not found.")
+    if simulation_path.exists():
+        shutil.rmtree(simulation_path)
+    return {"status": "deleted", "simulation_id": simulation_id}
+
+
+@app.post("/api/simulations")
+async def upload_simulation(
+    session_id: Annotated[str, Form()],
+    name: Annotated[str, Form()],
+    strategy_name: Annotated[str, Form()],
+    files: Annotated[list[UploadFile], File()],
+    strategy_version: Annotated[str, Form()] = "",
+    fee_bps: Annotated[float, Form()] = 10.0,
+    slippage_bps: Annotated[float, Form()] = 5.0,
+    allow_short: Annotated[bool, Form()] = False,
+) -> dict:
+    uploaded_files: list[UploadedDecisionFile] = []
+    for file in files:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail=f"{file.filename} is empty.")
+        uploaded_files.append(
+            UploadedDecisionFile(
+                file_name=file.filename or "decisions.csv",
+                content=content,
+            )
+        )
+    try:
+        result = create_simulation(
+            workspace=workspace,
+            catalog=catalog,
+            session_id=session_id,
+            name=name,
+            strategy_name=strategy_name,
+            strategy_version=strategy_version or None,
+            settings=SimulationSettings(
+                fee_bps=fee_bps,
+                slippage_bps=slippage_bps,
+                allow_short=allow_short,
+            ),
+            files=uploaded_files,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "simulation_id": result.simulation_id,
+        "status": result.status,
+        "path": str(result.path),
+        "file_count": result.file_count,
+        "row_count": result.row_count,
+        "errors": result.errors,
+    }
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -269,7 +369,21 @@ def _with_session_runtime_fields(session: dict) -> dict:
     session["strategy_data_path"] = str(data_path)
     session["kline_data_path"] = str(data_path / "klines")
     session["agg_trades_data_path"] = str(data_path / "aggTrades")
+    session["simulation_standard_path"] = str(SIMULATION_STANDARD_PATH)
     return session
+
+
+def _with_simulation_runtime_fields(simulation: dict) -> dict:
+    simulation = dict(simulation)
+    simulation_path = Path(simulation["path"])
+    simulation["disk_size_bytes"] = directory_size(simulation_path)
+    simulation["decisions_path"] = str(simulation_path / "decisions")
+    simulation["results_path"] = str(simulation_path / "results")
+    try:
+        simulation["settings"] = json.loads(simulation["settings_json"])
+    except (TypeError, json.JSONDecodeError):
+        simulation["settings"] = {}
+    return simulation
 
 
 def directory_size(path: Path) -> int:

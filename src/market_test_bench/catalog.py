@@ -94,6 +94,61 @@ CREATE TABLE IF NOT EXISTS session_files (
     FOREIGN KEY(normalized_file_id) REFERENCES normalized_files(id),
     UNIQUE(session_id, normalized_file_id)
 );
+
+CREATE TABLE IF NOT EXISTS session_windows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    window_id TEXT NOT NULL,
+    normalized_file_id INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    interval TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    row_count INTEGER NOT NULL,
+    sort_order INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(session_id) REFERENCES sessions(id),
+    FOREIGN KEY(normalized_file_id) REFERENCES normalized_files(id),
+    UNIQUE(session_id, window_id),
+    UNIQUE(session_id, normalized_file_id)
+);
+
+CREATE TABLE IF NOT EXISTS simulations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    strategy_name TEXT NOT NULL,
+    strategy_version TEXT,
+    status TEXT NOT NULL,
+    path TEXT NOT NULL,
+    settings_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TEXT,
+    FOREIGN KEY(session_id) REFERENCES sessions(id)
+);
+
+CREATE TABLE IF NOT EXISTS simulation_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    simulation_id TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    row_count INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(simulation_id) REFERENCES simulations(id)
+);
+
+CREATE TABLE IF NOT EXISTS simulation_validation_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    simulation_id TEXT NOT NULL,
+    file_name TEXT,
+    row_number INTEGER,
+    status TEXT NOT NULL,
+    issue_code TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(simulation_id) REFERENCES simulations(id)
+);
 """
 
 
@@ -131,6 +186,10 @@ class Catalog:
 
     def clear_all_data_records(self) -> None:
         with self.connect() as connection:
+            connection.execute("DELETE FROM simulation_validation_results")
+            connection.execute("DELETE FROM simulation_files")
+            connection.execute("DELETE FROM simulations")
+            connection.execute("DELETE FROM session_windows")
             connection.execute("DELETE FROM session_files")
             connection.execute("DELETE FROM sessions")
             connection.execute("DELETE FROM classifications")
@@ -144,13 +203,15 @@ class Catalog:
                 """
                 SELECT
                     s.*,
-                    COUNT(CASE WHEN nf.data_type = 'klines' THEN 1 END) AS file_count,
-                    COUNT(CASE WHEN nf.data_type = 'aggTrades' THEN 1 END) AS agg_trades_file_count,
-                    COUNT(sf.id) AS total_file_count,
+                    COUNT(DISTINCT CASE WHEN nf.data_type = 'klines' THEN sf.id END) AS file_count,
+                    COUNT(DISTINCT CASE WHEN nf.data_type = 'aggTrades' THEN sf.id END) AS agg_trades_file_count,
+                    COUNT(DISTINCT sf.id) AS total_file_count,
+                    COUNT(DISTINCT sw.id) AS window_count,
                     COUNT(DISTINCT CASE WHEN nf.data_type = 'klines' THEN nf.symbol END) AS symbol_count
                 FROM sessions s
                 LEFT JOIN session_files sf ON sf.session_id = s.id
                 LEFT JOIN normalized_files nf ON nf.id = sf.normalized_file_id
+                LEFT JOIN session_windows sw ON sw.session_id = s.id
                 GROUP BY s.id
                 ORDER BY s.created_at DESC
                 """
@@ -163,13 +224,15 @@ class Catalog:
                 """
                 SELECT
                     s.*,
-                    COUNT(CASE WHEN nf.data_type = 'klines' THEN 1 END) AS file_count,
-                    COUNT(CASE WHEN nf.data_type = 'aggTrades' THEN 1 END) AS agg_trades_file_count,
-                    COUNT(sf.id) AS total_file_count,
+                    COUNT(DISTINCT CASE WHEN nf.data_type = 'klines' THEN sf.id END) AS file_count,
+                    COUNT(DISTINCT CASE WHEN nf.data_type = 'aggTrades' THEN sf.id END) AS agg_trades_file_count,
+                    COUNT(DISTINCT sf.id) AS total_file_count,
+                    COUNT(DISTINCT sw.id) AS window_count,
                     COUNT(DISTINCT CASE WHEN nf.data_type = 'klines' THEN nf.symbol END) AS symbol_count
                 FROM sessions s
                 LEFT JOIN session_files sf ON sf.session_id = s.id
                 LEFT JOIN normalized_files nf ON nf.id = sf.normalized_file_id
+                LEFT JOIN session_windows sw ON sw.session_id = s.id
                 WHERE s.id = ?
                 GROUP BY s.id
                 """,
@@ -192,6 +255,177 @@ class Catalog:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_session_windows(self, session_id: str) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT sw.*, nf.source, nf.market, nf.data_type, nf.year_month, nf.path, nf.sha256
+                FROM session_windows sw
+                JOIN normalized_files nf ON nf.id = sw.normalized_file_id
+                WHERE sw.session_id = ?
+                ORDER BY sw.sort_order
+                """,
+                (session_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_simulations(self) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    sim.*,
+                    s.interval,
+                    s.start_month,
+                    s.end_month,
+                    COUNT(sf.id) AS file_count,
+                    COUNT(CASE WHEN svr.status = 'error' THEN 1 END) AS error_count
+                FROM simulations sim
+                LEFT JOIN sessions s ON s.id = sim.session_id
+                LEFT JOIN simulation_files sf ON sf.simulation_id = sim.id
+                LEFT JOIN simulation_validation_results svr ON svr.simulation_id = sim.id
+                GROUP BY sim.id
+                ORDER BY sim.created_at DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_simulation(self, simulation_id: str) -> dict | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    sim.*,
+                    s.interval,
+                    s.start_month,
+                    s.end_month,
+                    COUNT(sf.id) AS file_count,
+                    COUNT(CASE WHEN svr.status = 'error' THEN 1 END) AS error_count
+                FROM simulations sim
+                LEFT JOIN sessions s ON s.id = sim.session_id
+                LEFT JOIN simulation_files sf ON sf.simulation_id = sim.id
+                LEFT JOIN simulation_validation_results svr ON svr.simulation_id = sim.id
+                WHERE sim.id = ?
+                GROUP BY sim.id
+                """,
+                (simulation_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_simulation_files(self, simulation_id: str) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM simulation_files
+                WHERE simulation_id = ?
+                ORDER BY file_name
+                """,
+                (simulation_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_simulation_validation_results(self, simulation_id: str) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM simulation_validation_results
+                WHERE simulation_id = ?
+                ORDER BY file_name, row_number, id
+                """,
+                (simulation_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_simulation_records(self, simulation_id: str) -> dict | None:
+        with self.connect() as connection:
+            simulation = connection.execute(
+                "SELECT * FROM simulations WHERE id = ?",
+                (simulation_id,),
+            ).fetchone()
+            if simulation is None:
+                return None
+
+            connection.execute(
+                "DELETE FROM simulation_validation_results WHERE simulation_id = ?",
+                (simulation_id,),
+            )
+            connection.execute("DELETE FROM simulation_files WHERE simulation_id = ?", (simulation_id,))
+            connection.execute("DELETE FROM simulations WHERE id = ?", (simulation_id,))
+        return dict(simulation)
+
+    def create_simulation(
+        self,
+        *,
+        simulation_id: str,
+        name: str,
+        session_id: str,
+        strategy_name: str,
+        strategy_version: str | None,
+        status: str,
+        path: Path,
+        settings_json: str,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO simulations (
+                    id, name, session_id, strategy_name, strategy_version, status, path, settings_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    simulation_id,
+                    name,
+                    session_id,
+                    strategy_name,
+                    strategy_version,
+                    status,
+                    str(path),
+                    settings_json,
+                ),
+            )
+
+    def add_simulation_file(
+        self,
+        *,
+        simulation_id: str,
+        file_name: str,
+        path: Path,
+        row_count: int,
+        status: str,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO simulation_files (simulation_id, file_name, path, row_count, status)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (simulation_id, file_name, str(path), row_count, status),
+            )
+
+    def add_simulation_validation_result(
+        self,
+        *,
+        simulation_id: str,
+        file_name: str | None,
+        row_number: int | None,
+        status: str,
+        issue_code: str,
+        message: str,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO simulation_validation_results (
+                    simulation_id, file_name, row_number, status, issue_code, message
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (simulation_id, file_name, row_number, status, issue_code, message),
+            )
+
     def delete_session_records(self, session_id: str) -> dict | None:
         with self.connect() as connection:
             session = connection.execute(
@@ -209,6 +443,7 @@ class Catalog:
                 ).fetchall()
             ]
 
+            connection.execute("DELETE FROM session_windows WHERE session_id = ?", (session_id,))
             for normalized_id in normalized_ids:
                 replacement = connection.execute(
                     """
@@ -338,6 +573,41 @@ class Catalog:
                 VALUES (?, ?, ?, ?)
                 """,
                 (session_id, normalized_file_id, str(session_path), sort_order),
+            )
+
+    def add_session_window(
+        self,
+        *,
+        session_id: str,
+        window_id: str,
+        normalized_file_id: int,
+        symbol: str,
+        interval: str,
+        start_time: str,
+        end_time: str,
+        row_count: int,
+        sort_order: int,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO session_windows (
+                    session_id, window_id, normalized_file_id, symbol, interval,
+                    start_time, end_time, row_count, sort_order
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    window_id,
+                    normalized_file_id,
+                    symbol,
+                    interval,
+                    start_time,
+                    end_time,
+                    row_count,
+                    sort_order,
+                ),
             )
 
     def upsert_normalized_file(

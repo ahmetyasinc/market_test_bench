@@ -50,15 +50,29 @@ def test_catalog_tracks_sessions_and_session_files(tmp_path: Path) -> None:
         session_path=session_file_path,
         sort_order=0,
     )
+    catalog.add_session_window(
+        session_id="session_test",
+        window_id="win_binance_spot_BTCUSDT_1d_202401_abc123",
+        normalized_file_id=normalized_id,
+        symbol="BTCUSDT",
+        interval="1d",
+        start_time="2024-01-01T00:00:00",
+        end_time="2024-01-31T00:00:00",
+        row_count=31,
+        sort_order=0,
+    )
     catalog.update_session_status(session_id="session_test", status="ready")
 
     sessions = catalog.list_sessions()
     files = catalog.list_session_files("session_test")
+    windows = catalog.list_session_windows("session_test")
 
     assert sessions[0]["status"] == "ready"
     assert sessions[0]["file_count"] == 1
+    assert sessions[0]["window_count"] == 1
     assert files[0]["symbol"] == "BTCUSDT"
     assert files[0]["session_path"] == str(session_file_path)
+    assert windows[0]["window_id"] == "win_binance_spot_BTCUSDT_1d_202401_abc123"
 
 
 def test_delete_session_records_removes_unshared_files(tmp_path: Path) -> None:
@@ -109,11 +123,23 @@ def test_delete_session_records_removes_unshared_files(tmp_path: Path) -> None:
         session_path=session_file_path,
         sort_order=0,
     )
+    catalog.add_session_window(
+        session_id="session_delete",
+        window_id="win_binance_spot_BTCUSDT_1h_202401_delete",
+        normalized_file_id=normalized_id,
+        symbol="BTCUSDT",
+        interval="1h",
+        start_time="2024-01-01T00:00:00",
+        end_time="2024-01-31T00:00:00",
+        row_count=31,
+        sort_order=0,
+    )
 
     deleted = catalog.delete_session_records("session_delete")
 
     assert deleted is not None
     assert catalog.get_session("session_delete") is None
+    assert catalog.list_session_windows("session_delete") == []
     assert catalog.list_normalized_files() == []
 
 
